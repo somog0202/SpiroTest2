@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>流量波形モニター</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, "Hiragino Sans", sans-serif;
+      color: #21344a;
+      background: #f5f8fc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 28px 22px 42px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 5px 0 22px;
+      color: #718399;
+      font-size: 0.82rem;
+    }
+
+    .panel {
+      margin-bottom: 14px;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid #e3ebf5;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(34, 84, 144, 0.05);
+    }
+
+    .toolbar,
+    .actions,
+    .connection {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+    }
+
+    .toolbar {
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .toolbar h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      min-height: 36px;
+      padding: 6px 12px;
+      color: #34506e;
+      background: #fff;
+      border: 1px solid #d5e2f0;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #f0f7ff;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .primary {
+      color: #fff;
+      background: #2689ec;
+      border-color: #2689ec;
+    }
+
+    .primary:hover:not(:disabled) {
+      background: #177adf;
+      color: #fff;
+    }
+
+    #graph {
+      display: block;
+      width: 100%;
+      height: min(62vh, 540px);
+      min-height: 330px;
+    }
+
+    .hint,
+    .settings-note {
+      color: #8496aa;
+      font-size: 0.77rem;
+    }
+
+    .hint { margin: 9px 0 0; }
+    .settings-note { margin: 12px 0 0; }
+
+    .settings-toggle-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+
+    #settingsToggle {
+      min-height: 28px;
+      font-size: 0.78rem;
+      color: #72869b;
+      background: transparent;
+      border-color: transparent;
+    }
+
+    .settings {
+      margin-top: 11px;
+      padding: 16px;
+      background: #f8fbff;
+      border: 1px solid #e2ebf6;
+      border-radius: 12px;
+    }
+
+    .settings[hidden] {
+      display: none;
+    }
+
+    .settings-grid {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 14px 22px;
+    }
+
+    .settings-grid label {
+      display: grid;
+      gap: 6px;
+      color: #61768b;
+      font-size: 0.8rem;
+    }
+
+    .settings-grid input,
+    .connection input {
+      min-height: 36px;
+      padding: 6px 9px;
+      background: #fff;
+      color: #21344a;
+      border: 1px solid #d4e0ec;
+      border-radius: 8px;
+    }
+
+    .settings-grid input { width: 120px; }
+    .connection input { width: 140px; }
+
+    /* 各表示項目を固定位置に配置して、数値の変化による横揺れを防ぐ */
+    .readings {
+      display: grid;
+      grid-template-columns: 190px 160px 140px 190px;
+      gap: 10px 20px;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+
+    .readings > span {
+      white-space: nowrap;
+    }
+
+    .reading-label {
+      color: #8092a5;
+    }
+
+    .readings strong {
+      display: inline-block;
+      min-width: 7ch;
+      margin-left: 6px;
+      text-align: right;
+      font-size: 1.03rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #pressure {
+      min-width: 8ch;
+      color: #208bec;
+      font-size: 1.28rem;
+    }
+
+    #status {
+      margin: 13px 0 0;
+      color: #61768b;
+      font-size: 0.88rem;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 700px) {
+      .readings {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .readings {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 16px 11px 26px; }
+      .panel { padding: 13px; border-radius: 12px; }
+      #graph { height: 55vh; min-height: 310px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>差圧波形モニター</h1>
+
+  <section class="panel">
+    <div class="toolbar">
+      <div class="actions">
+        <button id="scaleReset">スケールリセット</button>
+        <button id="clearGraph">波形を消去</button>
+      </div>
+    </div>
+
+    <canvas id="graph" aria-label="差圧の時系列波形"></canvas>
+
+    <p class="hint" id="graphHint">
+      縦軸：差圧 [Pa] ／ 横軸：呼吸開始からの経過時間 ／ 表示用ローパス：5 Hz
+    </p>
+
+    <div class="settings-toggle-row">
+      <button id="settingsToggle" aria-expanded="false"
+              aria-controls="settings">
+        詳細設定 ›
+      </button>
+    </div>
+
+    <div id="settings" class="settings" hidden>
+      <div class="settings-grid">
+        <label>
+          横軸の長さ［秒］
+          <input id="windowSeconds" type="number"
+                 min="1" max="60" step="1" value="2">
+        </label>
+        <label>
+          縦軸の上限［Pa］
+          <input id="axisMaxPa" type="number"
+                 min="1" max="600" step="10" value="500">
+        </label>
+        <label>
+          ローパス［Hz］
+          <input id="cutoffHz" type="number"
+                 min="0.1" max="40" step="0.1" value="8">
+        </label>
+        <label>
+          線の太さ［px］
+          <input id="lineWidth" type="number"
+                 min="1" max="12" step="0.5" value="6">
+        </label>
+        <label>
+          波形開始閾値［Pa］
+          <input id="startThreshold" type="number"
+                 min="0" max="100" step="0.5" value="1.5">
+        </label>
+        <label>
+          0判定閾値［Pa］
+          <input id="zeroThreshold" type="number"
+                 min="0" max="100" step="0.5" value="1.5">
+        </label>
+        <label>
+          終了判定時間［秒］
+          <input id="zeroHoldSeconds" type="number"
+                 min="0.05" max="5" step="0.05" value="0.3">
+        </label>
+      </div>
+      <p class="settings-note">
+        ローパスの変更は、新しく受信する波形から適用します。
+        波形開始閾値を超えると描画を開始し、0判定閾値以内が
+        終了判定時間だけ続くと、残りを0 Paで描画します。
+        ESP側のデータは変更しません。
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="readings">
+      <span>
+        <span class="reading-label">差圧</span>
+        <strong id="pressure">--</strong> Pa
+      </span>
+      <span>
+        <span class="reading-label">受信</span>
+        <strong id="rate">--</strong> 点/秒
+      </span>
+      <span>
+        <span class="reading-label">欠測</span>
+        <strong id="lost">0</strong> 点
+      </span>
+      <span>
+        <span class="reading-label">最終受信</span>
+        <strong id="updated">--</strong>
+      </span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="connection">
+      <label for="nameFilter">機器名の先頭</label>
+      <input id="nameFilter" value="ESP32C3" autocomplete="off">
+      <button id="findByName" class="primary">名前で探す</button>
+      <button id="findAll">全機器から選ぶ</button>
+      <button id="disconnect" disabled>切断</button>
+    </div>
+    <p id="status" role="status">未接続</p>
+  </section>
+
+  <script>
+    "use strict";
+
+    const SERVICE_UUID =
+      "4f542e70-1d3b-4fe4-9a9c-5a938f753b21";
+    const DATA_UUID =
+      "4f542e71-1d3b-4fe4-9a9c-5a938f753b21";
+    const INFO_UUID =
+      "4f542e72-1d3b-4fe4-9a9c-5a938f753b21";
+
+    const SAMPLE_MS = 10;
+    const MAX_SAMPLES = 6200;
+    const $ = (id) => document.getElementById(id);
+
+    let windowMs = 2000;
+    let cutoffHz = 8;
+    let graphLineWidth = 4;
+    let startThresholdPa = 1.5;
+    let zeroThresholdPa = 1.5;
+    let zeroHoldMs = 300;
+
+    let device = null;
+    let characteristic = null;
+    let connecting = false;
+    let scaleFactor = 60;
+
+    // 呼吸1回分の描画状態
+    // waiting: 待機、drawing: 波形描画、finishing: 0 Paで右端まで描画、
+    // complete: 描画完了して静止
+    let graphState = "waiting";
+    let eventStartTime = null;
+    let zeroStartTime = null;
+    let zeroConfirmed = false;
+    let eventSamples = [];
+    let preTriggerSamples = [];
+    let lastEventSample = null;
+
+    let arrivals = [];
+    let lostCount = 0;
+    let lastSequence = null;
+    let lastSampleTime = null;
+    let filteredValue = null;
+    let axisMax = 500;
+
+    function setStatus(text) {
+      $("status").textContent = text;
+    }
+
+    function setConnected(connected) {
+      $("findByName").disabled = connected || connecting;
+      $("findAll").disabled = connected || connecting;
+      $("disconnect").disabled = !connected;
+    }
+
+    function trim(now) {
+      while (arrivals.length &&
+             arrivals[0] < now - 1000) {
+        arrivals.shift();
+      }
+    }
+
+    function resetBreathGraph() {
+      graphState = "waiting";
+      eventStartTime = null;
+      zeroStartTime = null;
+      zeroConfirmed = false;
+      eventSamples = [];
+      preTriggerSamples = [];
+      lastEventSample = null;
+    }
+
+    function clearWaveform() {
+      arrivals = [];
+      lostCount = 0;
+      lastSequence = null;
+      lastSampleTime = null;
+      filteredValue = null;
+      resetBreathGraph();
+
+      $("pressure").textContent = "--";
+      $("rate").textContent = "--";
+      $("lost").textContent = "0";
+      $("updated").textContent = "--";
+    }
+
+    // 縦軸は自動拡張せず、詳細設定で指定した範囲に固定する。
+    function resetScale() {
+      const configuredMax = Number($("axisMaxPa").value);
+      if (Number.isFinite(configuredMax) &&
+          configuredMax >= 1 && configuredMax <= 600) {
+        axisMax = configuredMax;
+      }
+    }
+
+    function onDisconnected() {
+      characteristic = null;
+      device = null;
+      connecting = false;
+
+      setConnected(false);
+      setStatus("切断されました");
+      clearWaveform();
+    }
+
+    function addFlowSample(sample) {
+      const value = sample.filtered;
+      const preTriggerDurationMs = 300;
+
+      // 完了後は、次の吸気開始まで現在の波形を保持する。
+      if (graphState === "complete") {
+        if (value >= startThresholdPa) {
+          graphState = "drawing";
+          eventStartTime = sample.time;
+          zeroStartTime = null;
+          zeroConfirmed = false;
+          eventSamples = preTriggerSamples.slice();
+          eventSamples.push(sample);
+          preTriggerSamples = [];
+          lastEventSample = sample;
+        } else {
+          preTriggerSamples.push(sample);
+          while (preTriggerSamples.length &&
+                 preTriggerSamples[0].time < sample.time - preTriggerDurationMs) {
+            preTriggerSamples.shift();
+          }
+        }
+        return;
+      }
+
+      // 待機中は直近のサンプルを保持しておき、閾値到達時に
+      // 立ち上がり前のデータも描画へ引き継ぐ。
+      if (graphState === "waiting") {
+        preTriggerSamples.push(sample);
+        while (preTriggerSamples.length &&
+               preTriggerSamples[0].time < sample.time - preTriggerDurationMs) {
+          preTriggerSamples.shift();
+        }
+
+        if (value >= startThresholdPa) {
+          graphState = "drawing";
+          eventStartTime = sample.time;
+          zeroStartTime = null;
+          zeroConfirmed = false;
+          eventSamples = preTriggerSamples.slice();
+          lastEventSample = sample;
+          preTriggerSamples = [];
+        }
+        return;
+      }
+
+      if (graphState === "finishing") {
+        return;
+      }
+
+      eventSamples.push(sample);
+      lastEventSample = sample;
+
+      if (graphState === "drawing") {
+        if (value <= zeroThresholdPa) {
+          if (zeroStartTime === null) {
+            zeroStartTime = sample.time;
+          }
+
+          if (sample.time - zeroStartTime >= zeroHoldMs) {
+            graphState = "finishing";
+            zeroConfirmed = true;
+          }
+        } else {
+          zeroStartTime = null;
+        }
+      }
+
+      // 横軸の0秒は閾値を超えた時点。右端は設定秒数後。
+      if (eventStartTime !== null &&
+          sample.time - eventStartTime >= windowMs) {
+        graphState = "complete";
+      }
+    }
+
+    function onNotification(event) {
+      const view = event.target.value;
+
+      if (view.byteLength !== 19) {
+        setStatus(
+          `想定外のパケット長：${view.byteLength}バイト`
+        );
+        return;
+      }
+
+      const firstSequence = view.getUint16(0, true);
+      const count = view.getUint8(2);
+
+      if (count < 1 || count > 8) {
+        setStatus(`想定外のサンプル数：${count}`);
+        return;
+      }
+
+      const now = performance.now();
+      let firstTime;
+      let restartFilter = false;
+
+      if (lastSequence === null) {
+        firstTime = now - (count - 1) * SAMPLE_MS;
+        restartFilter = true;
+      } else {
+        const expected = (lastSequence + 1) & 0xffff;
+        const gap =
+          (firstSequence - expected + 65536) & 0xffff;
+
+        if (gap > 5000) {
+          // ESP再起動などで通し番号が巻き戻った場合。
+          clearWaveform();
+          firstTime = now - (count - 1) * SAMPLE_MS;
+          restartFilter = true;
+        } else {
+          lostCount += gap;
+          firstTime =
+            lastSampleTime + (gap + 1) * SAMPLE_MS;
+
+          if (gap > 0) restartFilter = true;
+
+          // BLEの到着遅れを吸収しきれないときは時刻を再同期。
+          if (firstTime > now + 300 ||
+              firstTime < now - 2000) {
+            firstTime = now - (count - 1) * SAMPLE_MS;
+            resetBreathGraph();
+            restartFilter = true;
+          }
+        }
+      }
+
+      const alpha = 1 - Math.exp(
+        -2 * Math.PI * cutoffHz * SAMPLE_MS / 1000
+      );
+
+      for (let i = 0; i < count; ++i) {
+        const raw = view.getInt16(3 + 2 * i, true);
+        const pressure = raw / scaleFactor;
+        const displayPressure = Math.max(0, pressure);
+        const sequence = (firstSequence + i) & 0xffff;
+        const time = firstTime + i * SAMPLE_MS;
+
+        if (restartFilter || filteredValue === null) {
+          filteredValue = displayPressure;
+          restartFilter = false;
+        } else {
+          filteredValue +=
+            alpha * (displayPressure - filteredValue);
+        }
+
+        const sample = {
+          time,
+          pressure,
+          filtered: filteredValue,
+          sequence
+        };
+
+        addFlowSample(sample);
+
+        arrivals.push(now);
+      }
+
+      lastSequence =
+        (firstSequence + count - 1) & 0xffff;
+      lastSampleTime =
+        firstTime + (count - 1) * SAMPLE_MS;
+
+      trim(now);
+
+      const latestPressure = pressure;
+      $("pressure").textContent =
+        latestPressure.toFixed(3);
+      $("rate").textContent =
+        String(arrivals.length);
+      $("lost").textContent =
+        String(lostCount);
+      $("updated").textContent =
+        new Date().toLocaleTimeString();
+    }
+
+    async function connect(filterByName) {
+      if (!window.isSecureContext ||
+          !navigator.bluetooth) {
+        setStatus(
+          "HTTPS上のChromeまたはEdgeで開いてください"
+        );
+        return;
+      }
+
+      const prefix = $("nameFilter").value.trim();
+
+      if (filterByName && !prefix) {
+        setStatus(
+          "機器名の先頭文字を入力してください"
+        );
+        return;
+      }
+
+      connecting = true;
+      setConnected(false);
+      setStatus("機器を検索中…");
+
+      let candidate = null;
+
+      try {
+        candidate = await navigator.bluetooth.requestDevice(
+          filterByName
+            ? {
+                filters: [{ namePrefix: prefix }],
+                optionalServices: [SERVICE_UUID]
+              }
+            : {
+                acceptAllDevices: true,
+                optionalServices: [SERVICE_UUID]
+              }
+        );
+
+        device = candidate;
+        candidate.addEventListener(
+          "gattserverdisconnected",
+          onDisconnected
+        );
+
+        setStatus(
+          `${candidate.name || "名前なしの機器"} に接続中…`
+        );
+
+        const server = await candidate.gatt.connect();
+        const service =
+          await server.getPrimaryService(SERVICE_UUID);
+
+        const info =
+          await service.getCharacteristic(INFO_UUID);
+        const infoValue = await info.readValue();
+
+        if (infoValue.byteLength !== 2) {
+          throw new Error(
+            "スケール係数の形式が違います"
+          );
+        }
+
+        scaleFactor = infoValue.getUint16(0, true);
+
+        if (scaleFactor === 0) {
+          throw new Error(
+            "スケール係数が0です"
+          );
+        }
+
+        const ch =
+          await service.getCharacteristic(DATA_UUID);
+
+        ch.addEventListener(
+          "characteristicvaluechanged",
+          onNotification
+        );
+
+        await ch.startNotifications();
+
+        characteristic = ch;
+        clearWaveform();
+        resetScale();
+
+        connecting = false;
+        setConnected(true);
+
+        setStatus(
+          `${candidate.name || "名前なしの機器"} に接続しました` +
+          `（係数 ${scaleFactor}）`
+        );
+      } catch (error) {
+        connecting = false;
+
+        if (candidate?.gatt?.connected) {
+          candidate.gatt.disconnect();
+        }
+
+        device = null;
+        characteristic = null;
+        setConnected(false);
+
+        setStatus(
+          error.name === "NotFoundError"
+            ? "機器が選択されませんでした"
+            : `接続エラー：${error.message}`
+        );
+      }
+    }
+
+    function drawGraph() {
+      const canvas = $("graph");
+      const box = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const pixelWidth =
+        Math.max(1, Math.round(box.width * dpr));
+      const pixelHeight =
+        Math.max(1, Math.round(box.height * dpr));
+
+      if (canvas.width !== pixelWidth ||
+          canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const w = box.width;
+      const h = box.height;
+      const left = 62;
+      const right = 18;
+      const top = 18;
+      const bottom = 32;
+      const plotW = Math.max(1, w - left - right);
+      const plotH = Math.max(1, h - top - bottom);
+      const now = performance.now();
+
+      // 波形開始位置を0秒とし、設定時間後に右端へ到達する。
+      const leadInMs = Math.min(500, windowMs * 0.1);
+      const onsetX = left + (leadInMs / windowMs) * plotW;
+      const eventPlotW = Math.max(1, left + plotW - onsetX);
+
+      if (eventStartTime !== null &&
+          graphState !== "waiting" &&
+          graphState !== "complete" &&
+          now - eventStartTime >= windowMs) {
+        graphState = "complete";
+      }
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+
+      const yOf = (value) =>
+        top + ((axisMax - value) / axisMax) * plotH;
+      const zeroY = yOf(0);
+
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#e9eff6";
+      ctx.fillStyle = "#8193a7";
+
+      for (let i = 0; i <= 4; i++) {
+        const y = top + plotH * i / 4;
+        const value = axisMax * (1 - i / 4);
+
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(left + plotW, y);
+        ctx.stroke();
+        ctx.fillText(value.toFixed(0), 8, y);
+      }
+
+      ctx.textBaseline = "alphabetic";
+
+      for (let i = 0; i <= 5; i++) {
+        const x = onsetX + i / 5 * eventPlotW;
+
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, top + plotH);
+        ctx.stroke();
+
+        const seconds = windowMs / 1000 * (i / 5);
+        const label = `${Number(seconds.toFixed(1))}秒`;
+        const labelWidth = ctx.measureText(label).width;
+        const labelX = Math.max(
+          left,
+          Math.min(x - labelWidth / 2, left + plotW - labelWidth)
+        );
+        ctx.fillText(label, labelX, h - 8);
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(left, top, plotW, plotH);
+      ctx.clip();
+
+      // 待機中は、波形開始予定位置まで0 Paを先に表示する。
+      ctx.beginPath();
+      ctx.strokeStyle = "#32a6f5";
+      ctx.lineWidth = graphLineWidth;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      if (graphState === "waiting") {
+        ctx.moveTo(left, zeroY);
+        ctx.lineTo(onsetX, zeroY);
+        ctx.stroke();
+      } else if (eventStartTime !== null) {
+        // 0秒の位置を吸気開始閾値の通過時刻に固定する。
+        const xOf = (time) =>
+          onsetX + ((time - eventStartTime) / windowMs) * eventPlotW;
+
+        // 待機時の0 Paラインから、トリガー前バッファの実測値へ
+        // 連続して接続し、立ち上がりを滑らかに描く。
+        ctx.moveTo(left, zeroY);
+
+        let previous = null;
+        for (const sample of eventSamples) {
+          const x = xOf(sample.time);
+          const y = yOf(sample.filtered);
+
+          const continuous =
+            previous === null ||
+            (sample.sequence === ((previous.sequence + 1) & 0xffff) &&
+             sample.time - previous.time <= SAMPLE_MS * 1.5);
+
+          if (!continuous) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+          previous = sample;
+        }
+
+        // 0 Paが一定時間続いた後は、水平線を実時間で右端まで伸ばす。
+        if (zeroConfirmed &&
+            (graphState === "finishing" || graphState === "complete")) {
+          const elapsedNow = Math.max(0, now - eventStartTime);
+          const endTime = graphState === "complete"
+            ? windowMs
+            : Math.min(windowMs, elapsedNow);
+          const endX = onsetX + (endTime / windowMs) * eventPlotW;
+          ctx.lineTo(Math.min(left + plotW, endX), zeroY);
+        }
+
+        ctx.stroke();
+      }
+
+      ctx.restore();
+      requestAnimationFrame(drawGraph);
+    }
+
+    function updateSettings() {
+      const seconds = Number($("windowSeconds").value);
+      const configuredAxisMax = Number($("axisMaxPa").value);
+      const cutoff = Number($("cutoffHz").value);
+      const width = Number($("lineWidth").value);
+      const startThreshold = Number($("startThreshold").value);
+      const zeroThreshold = Number($("zeroThreshold").value);
+      const zeroHoldSeconds = Number($("zeroHoldSeconds").value);
+
+      if (Number.isFinite(seconds) && seconds >= 1 && seconds <= 60) {
+        windowMs = seconds * 1000;
+      }
+
+      if (Number.isFinite(configuredAxisMax) &&
+          configuredAxisMax >= 1 && configuredAxisMax <= 600) {
+        axisMax = configuredAxisMax;
+      }
+
+      if (Number.isFinite(cutoff) &&
+          cutoff >= 0.1 && cutoff <= 40 &&
+          cutoff !== cutoffHz) {
+        cutoffHz = cutoff;
+        filteredValue = null;
+      }
+
+      if (Number.isFinite(width) && width >= 1 && width <= 12) {
+        graphLineWidth = width;
+      }
+
+      if (Number.isFinite(startThreshold) &&
+          startThreshold >= 0 && startThreshold <= 100) {
+        startThresholdPa = startThreshold;
+      }
+
+      if (Number.isFinite(zeroThreshold) &&
+          zeroThreshold >= 0 && zeroThreshold <= 100) {
+        zeroThresholdPa = zeroThreshold;
+      }
+
+      if (Number.isFinite(zeroHoldSeconds) &&
+          zeroHoldSeconds >= 0.05 && zeroHoldSeconds <= 5) {
+        zeroHoldMs = zeroHoldSeconds * 1000;
+      }
+
+      $("graphHint").textContent =
+        `縦軸：0～${axisMax} Pa（固定） ／ 横軸：呼吸開始からの経過時間 ／ ` +
+        `表示用ローパス：${cutoffHz} Hz`;
+
+      // 表示時間を変更した場合、進行中のイベントは新しい時間幅で評価する。
+      if (eventStartTime !== null &&
+          performance.now() - eventStartTime >= windowMs) {
+        graphState = "complete";
+      }
+    }
+
+    $("graphHint").textContent =
+      `縦軸：0～${axisMax} Pa（固定） ／ 横軸：呼吸開始からの経過時間 ／ ` +
+      `表示用ローパス：${cutoffHz} Hz`;
+
+    $("findByName").addEventListener(
+      "click",
+      () => connect(true)
+    );
+
+    $("findAll").addEventListener(
+      "click",
+      () => connect(false)
+    );
+
+    $("disconnect").addEventListener(
+      "click",
+      () => {
+        if (device?.gatt?.connected) {
+          device.gatt.disconnect();
+        }
+      }
+    );
+
+    $("scaleReset").addEventListener(
+      "click",
+      resetScale
+    );
+
+    $("clearGraph").addEventListener(
+      "click",
+      clearWaveform
+    );
+
+    $("settingsToggle").addEventListener(
+      "click",
+      () => {
+        const settings = $("settings");
+        settings.hidden = !settings.hidden;
+
+        $("settingsToggle").setAttribute(
+          "aria-expanded",
+          String(!settings.hidden)
+        );
+
+        $("settingsToggle").textContent =
+          settings.hidden
+            ? "詳細設定 ›"
+            : "詳細設定 ⌄";
+      }
+    );
+
+    for (const id of [
+      "windowSeconds",
+      "axisMaxPa",
+      "cutoffHz",
+      "lineWidth",
+      "startThreshold",
+      "zeroThreshold",
+      "zeroHoldSeconds"
+    ]) {
+      $(id).addEventListener(
+        "change",
+        updateSettings
+      );
+    }
+
+    requestAnimationFrame(drawGraph);
+  </script>
+</body>
+</html>
