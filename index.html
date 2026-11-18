@@ -342,7 +342,7 @@
 
     let windowMs = 2000;
     let cutoffHz = 8;
-    let graphLineWidth = 4;
+    let graphLineWidth = 6;
     let startThresholdPa = 1.5;
     let zeroThresholdPa = 1.5;
     let zeroHoldMs = 300;
@@ -802,7 +802,8 @@
 
       ctx.save();
       ctx.beginPath();
-      ctx.rect(left, top, plotW, plotH);
+      // 0 Paはプロット領域の下端に位置するため、線幅の半分だけクリップ範囲を下へ広げる。
+      ctx.rect(left, top, plotW, plotH + graphLineWidth / 2);
       ctx.clip();
 
       // 待機中は、波形開始予定位置まで0 Paを先に表示する。
